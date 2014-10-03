@@ -1,0 +1,4 @@
+# author: punisher
+# description: OmniReborn
+appname=OmniReborn
+implementation=com.icerealm.omnireborn.OmniHandler
