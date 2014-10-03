@@ -1,0 +1,299 @@
+﻿<html>
+
+<head>
+		<script type="text/javascript" src="jquery-1.7.1.js"></script>
+		<script type="text/javascript" src="game/constants.js"></script>
+		<script type="text/javascript" src="utils/tools.js"></script>
+		<script type="text/javascript" src="utils/canvas.js"></script>
+		<script type="text/javascript" src="game/map/unit.js"></script>
+		<script type="text/javascript" src="game/map/tile.js"></script>
+		<script type="text/javascript" src="game/map/selecttool.js"></script>
+		<script type="text/javascript" src="game/map/map.js"></script>
+		<script type="text/javascript" src="game/board.ui.js"></script>
+		<script type="text/javascript" src="game/game.ui.js"></script>
+		<!--<script type="text/javascript" src="game/game.js"></script>-->
+		<script>
+		
+				var websocket;
+		
+				function sendToServer(json) {
+					var myJSONText = JSON.stringify(json);
+					websocket.send(myJSONText);
+				}
+				
+				function writeToGameLog(msg) {
+					document.getElementById("game-log").innerHTML = msg;
+				}
+				
+				function disableGameButtons() {
+					document.getElementById("buy-hq").disabled = true;
+					document.getElementById("buy-tank").disabled = true;
+					document.getElementById("buy-scout").disabled = true;
+					document.getElementById("playuerlist").disabled = true;
+					document.getElementById("quit-game").disabled = false;
+					document.getElementById("start-game").disabled = false;
+					document.getElementById("end-turn").disabled = true;
+				}
+				
+				function enableGameButtons() {
+					document.getElementById("buy-hq").disabled = false;
+					document.getElementById("buy-tank").disabled = false;
+					document.getElementById("buy-scout").disabled = false;
+					document.getElementById("playuerlist").disabled = false;
+					document.getElementById("quit-game").disabled = false;
+					document.getElementById("start-game").disabled = false;
+					document.getElementById("end-turn").disabled = false;
+				}
+		
+				
+				
+                function start() {
+				
+					disableGameButtons();
+					writeToGameLog("WebSocket is connecting...");
+					
+                    websocket = new WebSocket("ws://localhost:81");
+                    websocket.onopen = function(event) {
+						writeToGameLog("Connection established!");
+                    }
+                    
+                    websocket.onmessage = function(event) {
+						// entry point for all interaction with the server				
+						var object = JSON.parse(event.data);
+						if (object.action == "alert") {
+							writeToGameLog(object.distance);
+						}
+						if (object.action == "list") {
+							
+							var array = object.distance;
+							var players = "";
+							for (i = 0; i < array.length; i++) {
+								players += array[i].name;
+								if (i != array.length - 1) { 
+									players += ", ";
+								}
+								writeToGameLog(players);
+							}
+							
+						}
+						
+						if (object.action == "begin-game") {
+							if (object.valid) {
+								console.log("init a new map");
+								board.initializeMap(object.map);
+								
+								// map init'ed, need to add the units
+								for (var i = 0; i < object.Units.length; i++) {
+									board.addUnit(object.Units[i]);
+								}
+								
+								
+								enableGameButtons();
+								writeToGameLog("you are starting a new game! Click on a tile to begin, then Buy Tank on top screen");
+							}
+							else {
+								alert(object.reason);
+							}
+						}
+						
+						if (object.action == "new-unit") {
+							
+							if (object.valid) {
+								board.addUnit(object);
+							}
+							else {
+								writeToGameLog(object.reason);
+							}
+						
+							
+						}
+						
+						if (object.action == "move-unit") {
+							writeToGameLog("");
+							if (object.valid) {
+									
+								// moving the units, handle an attack if necessary
+								if (object.defenderwon) {
+									console.log("defender won, must remove unit " + object.defenderwon);
+									board.removeUnit(object);
+									
+									document.getElementById("selectedtilex").innerHTML = object.posX;
+									document.getElementById("selectedtiley").innerHTML = object.posY;
+								}
+								else {
+									board.moveUnit(object.Id, object.Position);
+									board.moveSelectTool(object.Position.X, object.Position.Y);
+								}
+
+								// checking if it's the game is over
+								if (object.gameover && object.gameresult == "defeat") {
+									writeToGameLog("You lost! - Click on the quit button");
+									disableGameButtons();
+								}
+								else if (object.gameover) {
+									writeToGameLog("You win this game - Click on the quit button");
+									disableGameButtons();
+								}
+								
+								// checking if it's a end-turn
+								if (object.turnover) {
+									writeToGameLog("Turn completed! Unit movement reset!");
+								}
+							}
+							else {
+							
+								writeToGameLog(object.reason);
+							
+							}
+							
+						}
+						
+						if (object.yourturn) {
+							writeToGameLog("THIS IS YOUR TURN TO PLAY!");
+						}
+						
+						if (object.action == "player-left-game") {
+							var userId = object.userId;
+							writeToGameLog("Player " + userId + " left the game.");
+							
+							if (!object.valid) {
+								writeToGameLog("Game over! Not enough player remaining! - Click on the Quit button");
+								disableGameButtons();
+							}
+							
+						}
+                    }
+                    
+                    websocket.onerror = function(event) {
+                        
+                    }
+                    
+                    websocket.onclose = function(event) {
+                      
+                    }
+                }
+				
+				function sendMoveAction() {
+					var jsonobject = {"action":"move"};
+					sendToServer(jsonobject);
+				}
+				
+				function sendKillAction() {
+					var jsonobject = {"action":"kill"};
+					sendToServer(jsonobject);
+				}
+				
+				function sendBuyAction() {
+					var x = document.getElementById("selectedtilex").innerHTML;
+					var y = document.getElementById("selectedtiley").innerHTML;
+					var jsonobject = {"action":"buy-unit", "x":x, "y":y};			
+					sendToServer(jsonobject);
+				}
+				
+				function sendBuyCivilian() {
+					var x = document.getElementById("selectedtilex").innerHTML;
+					var y = document.getElementById("selectedtiley").innerHTML;
+					var jsonobject = {"action":"buy-unit", "x":x, "y":y, "type":"CIVILIAN"};
+					sendToServer(jsonobject);
+				}
+				
+				function sendBuyScout() {
+					var x = document.getElementById("selectedtilex").innerHTML;
+					var y = document.getElementById("selectedtiley").innerHTML;
+					var jsonobject = {"action":"buy-unit", "x":x, "y":y, "type":"SCOUT"};
+					sendToServer(jsonobject);
+				}
+				
+				function sendBuyTank() {
+					var x = document.getElementById("selectedtilex").innerHTML;
+					var y = document.getElementById("selectedtiley").innerHTML;
+					var jsonobject = {"action":"buy-unit", "x":x, "y":y, "type":"TANK"};
+					sendToServer(jsonobject);
+				}
+				
+				function sendBuyHQ() {
+					var x = document.getElementById("selectedtilex").innerHTML;
+					var y = document.getElementById("selectedtiley").innerHTML;
+					var jsonobject = {"action":"buy-unit", "x":x, "y":y, "type":"HQ"};
+					sendToServer(jsonobject);
+				}
+				
+				function sendMoveAction(unit, x, y) {
+					var jsonobject = {"action":"move-unit", "unitid":unit.id, "posX":x, "posY":y};
+					sendToServer(jsonobject);
+				}
+				
+				function getMap() {
+					var jsonobject = {"action":"map"};
+					sendToServer(jsonobject);
+				}
+				
+				function sendPlayersList() {
+					var jsonobject = {"action":"players"};
+					sendToServer(jsonobject);
+				}
+				
+				function sendGameStartRequest() {
+					var jsonobject = {"action":"start-game"};
+					sendToServer(jsonobject);
+				}
+				
+				function sendQuitGame() {
+					var jsonobject = {"action":"player-quit"};
+					sendToServer(jsonobject);
+				}
+				
+				function sendEndTurn() {
+					var jsonobject = {"action":"end-turn"};
+					sendToServer(jsonobject);
+				}
+				
+				
+				var serverInterface = {
+					
+					moveUnit: function (unit, newX, newY) {
+						sendMoveAction(unit, newX, newY);
+					}
+					
+				}
+                
+        </script>
+</head>
+
+<body onload="start()">
+
+
+<div id="container">
+    <h2>Omniscia</h2>
+
+    <div id="game-hud">  
+        <div id="game-toolbar" style="float:left; width:100%;">
+			<button id="buy-hq" onclick="sendBuyHQ()">Place HQ</button>
+            <button id="buy-tank" onclick="sendBuyTank()">Buy Tank</button>
+			<button id="buy-scout" onclick="sendBuyScout()">Buy Scout</button>
+            <button id="quit-game" onclick="sendQuitGame()">Quit game</button>
+            <button id="start-game" onclick="sendGameStartRequest()">Start game</button>
+            <button id="playuerlist" onclick="sendPlayersList()">Players list</button>
+			<button id="end-turn" onclick="sendEndTurn()">End turn</button>
+			<span id="game-log"></span>
+        </div>
+        <div id="game-board" style="float: left;" background="red">
+            <canvas id="viewport" width="960" height="640"></canvas>
+        </div>
+        <div id="game-statusbar" style="float: left;">
+            Mouse(x,y): <span id="mousex"></span>,&nbsp;<span id="mousey"></span>
+            Offset(x,y): <span id="offsetx"></span>,&nbsp;<span id="offsety"></span>
+            FPS: <span id="fps"></span>
+            Tile Info (x, y, type): <span id="tilex"></span>,&nbsp;<span id="tiley"></span>,&nbsp;<span id="tiletype"></span>
+			Selected Tile (x, y): <span id="selectedtilex"></span>,&nbsp;<span id="selectedtiley"></span>
+
+        </div>
+        
+    </div>
+    
+    
+</div>
+
+</body>
+</html>
+
